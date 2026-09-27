@@ -1,0 +1,16 @@
+package com.example.share.exception;
+
+public enum ErrorCode {
+    SHARE_NOT_FOUND,
+    SHARE_EXPIRED,
+    SHARE_REVOKED,
+    PASSWORD_REQUIRED,
+    INVALID_PASSWORD,
+    FILE_TOO_LARGE,
+    INVALID_FILE,
+    RATE_LIMITED,
+    UNAUTHORIZED,
+    VALIDATION_ERROR,
+    SERVICE_UNAVAILABLE,
+    INTERNAL_ERROR
+}
