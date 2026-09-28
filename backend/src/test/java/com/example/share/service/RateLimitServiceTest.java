@@ -48,7 +48,8 @@ class RateLimitServiceTest {
                 new AppProperties.Share(1024, 1000, Duration.ofMinutes(15), 60_000, "60"),
                 new AppProperties.Security("dev-only-access-token-secret-change-me"),
                 new AppProperties.RateLimit(createLimit, verifyLimit),
-                new AppProperties.Cors("http://localhost:5173"));
+                new AppProperties.Cors("http://localhost:5173"),
+                new AppProperties.RequestLog(false));
         return new RateLimitService(new MapRateLimitStore(), new TokenService(), properties);
     }
 

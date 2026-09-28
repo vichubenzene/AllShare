@@ -9,6 +9,7 @@
     <logger name="com.example.share" level="INFO"/>
     <logger name="org.springframework" level="INFO"/>
     <logger name="org.hibernate.SQL" level="WARN"/>
+    <logger name="org.mongodb.driver" level="WARN"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

@@ -17,10 +17,15 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      connect-timeout: 2s
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/temporary_share_logs}
   servlet:
     multipart:
-      max-file-size: ${MULTIPART_MAX_FILE_SIZE:50MB}
-      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:50MB}
+      max-file-size: 50MB
+      max-request-size: 51MB
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -28,6 +33,8 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  # Trust X-Forwarded-For only from loopback/private proxies such as the Vite dev server.
+  forward-headers-strategy: native
   error:
     include-message: never
     include-binding-errors: never
@@ -42,11 +49,11 @@ app:
   storage:
     location: ${STORAGE_LOCATION:./data/uploads}
   share:
-    max-file-size: ${MAX_FILE_SIZE:52428800}
-    max-text-length: ${MAX_TEXT_LENGTH:1000000}
-    access-token-ttl: ${ACCESS_TOKEN_TTL:15m}
-    cleanup-delay-ms: ${CLEANUP_DELAY_MS:60000}
-    allowed-expirations: ${ALLOWED_EXPIRATIONS:15,60,360,1440,4320,10080}
+    max-file-size: 52428800
+    max-text-length: 1000000
+    access-token-ttl: 15m
+    cleanup-delay-ms: 60000
+    allowed-expirations: 15,60,360,1440,4320,10080
   security:
     access-token-secret: ${ACCESS_TOKEN_SECRET:dev-only-access-token-secret-change-me}
   rate-limit:
@@ -54,3 +61,5 @@ app:
     verify-per-minute: ${RATE_LIMIT_VERIFY_PER_MINUTE:10}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+  request-log:
+    enabled: ${REQUEST_LOG_ENABLED:true}

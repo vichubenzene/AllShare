@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react';
-import { formatRemaining } from '../utils/format';
+import { formatRemaining } from '../utils/format.js';
 
-export function useCountdown(expiresAt?: string): string {
+export function useCountdown(expiresAt) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!expiresAt) {
-      return;
+      return undefined;
     }
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [expiresAt]);
 
-  if (!expiresAt) {
-    return '';
-  }
-  return formatRemaining(expiresAt, now);
+  return expiresAt ? formatRemaining(expiresAt, now) : '';
 }

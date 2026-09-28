@@ -15,8 +15,12 @@ public record AppProperties(
         Share share,
         Security security,
         RateLimit rateLimit,
-        Cors cors
+        Cors cors,
+        RequestLog requestLog
 ) {
+    public record RequestLog(boolean enabled) {
+    }
+
     public record Storage(String location) {
         public Path path() {
             return Path.of(location).toAbsolutePath().normalize();
