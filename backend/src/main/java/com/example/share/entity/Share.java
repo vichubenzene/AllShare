@@ -18,8 +18,8 @@ public class Share {
     @Column(name = "id", nullable = false)
     private UUID id;
 
-    @Column(name = "share_token", nullable = false, unique = true, length = 32)
-    private String shareToken;
+    @Column(name = "name", nullable = false, unique = true, length = 63)
+    private String name;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "type", nullable = false, length = 16)
@@ -31,13 +31,16 @@ public class Share {
     @Column(name = "original_filename", length = 255)
     private String originalFilename;
 
+    @Column(name = "extension", length = 16)
+    private String extension;
+
     @Column(name = "content_type", length = 127)
     private String contentType;
 
     @Column(name = "file_size")
     private Long fileSize;
 
-    @Column(name = "storage_key", length = 128)
+    @Column(name = "storage_key", length = 64)
     private String storageKey;
 
     @Column(name = "password_hash", length = 100)
@@ -63,12 +66,12 @@ public class Share {
         this.id = id;
     }
 
-    public String getShareToken() {
-        return shareToken;
+    public String getName() {
+        return name;
     }
 
-    public void setShareToken(String shareToken) {
-        this.shareToken = shareToken;
+    public void setName(String name) {
+        this.name = name;
     }
 
     public ShareType getType() {
@@ -93,6 +96,14 @@ public class Share {
 
     public void setOriginalFilename(String originalFilename) {
         this.originalFilename = originalFilename;
+    }
+
+    public String getExtension() {
+        return extension;
+    }
+
+    public void setExtension(String extension) {
+        this.extension = extension;
     }
 
     public String getContentType() {

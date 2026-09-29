@@ -2,6 +2,7 @@ package com.example.share.service;
 
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -11,26 +12,7 @@ import java.util.HexFormat;
 @Component
 public class TokenService {
 
-    private static final char[] ALPHABET =
-            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".toCharArray();
-    private static final int ALPHABET_BOUND = ALPHABET.length;
-    private static final int UNBIASED_LIMIT = 256 - (256 % ALPHABET_BOUND);
-
     private final SecureRandom random = new SecureRandom();
-
-    public String newShareToken() {
-        char[] out = new char[12];
-        byte[] buffer = new byte[1];
-        for (int i = 0; i < out.length; i++) {
-            int value;
-            do {
-                random.nextBytes(buffer);
-                value = buffer[0] & 0xff;
-            } while (value >= UNBIASED_LIMIT);
-            out[i] = ALPHABET[value % ALPHABET_BOUND];
-        }
-        return new String(out);
-    }
 
     public String newManagementToken() {
         byte[] bytes = new byte[32];
@@ -39,7 +21,7 @@ public class TokenService {
     }
 
     public String sha256Hex(String value) {
-        return HexFormat.of().formatHex(sha256(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        return HexFormat.of().formatHex(sha256(value.getBytes(StandardCharsets.UTF_8)));
     }
 
     public boolean matchesHash(String value, String expectedHex) {
@@ -52,8 +34,7 @@ public class TokenService {
         } catch (IllegalArgumentException ex) {
             return false;
         }
-        byte[] actual = sha256(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        return MessageDigest.isEqual(actual, expected);
+        return MessageDigest.isEqual(sha256(value.getBytes(StandardCharsets.UTF_8)), expected);
     }
 
     private static byte[] sha256(byte[] input) {

@@ -3,7 +3,8 @@ package com.example.share.dto;
 import java.time.Instant;
 
 public record ShareCreatedResponse(
-        String token,
+        String name,
+        String type,
         String shareUrl,
         String managementToken,
         Instant expiresAt,

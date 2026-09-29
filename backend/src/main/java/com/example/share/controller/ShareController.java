@@ -8,6 +8,7 @@ import com.example.share.dto.ShareViewResponse;
 import com.example.share.dto.VerifyPasswordRequest;
 import com.example.share.service.ShareService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -27,9 +28,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 
+/**
+ * {@code {slug}} is the public path without the leading slash: {@code vivi} or {@code vivi.pdf}.
+ */
 @RestController
 @RequestMapping("/api/shares")
 public class ShareController {
+
+    private static final String ACCESS_HEADER = "X-Share-Access";
 
     private final ShareService shares;
 
@@ -42,57 +48,53 @@ public class ShareController {
             @RequestBody CreateTextShareRequest request,
             HttpServletRequest http
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .cacheControl(CacheControl.noStore())
-                .body(shares.createText(request, http.getRemoteAddr()));
+        return created(shares.createText(request, http.getRemoteAddr()));
     }
 
     @PostMapping(value = "/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ShareCreatedResponse> createFile(
+            @RequestParam(value = "name", required = false) String name,
             @RequestParam(value = "file", required = false) MultipartFile file,
             @RequestParam(value = "expirationMinutes", required = false) Integer expirationMinutes,
             @RequestParam(value = "password", required = false) String password,
             HttpServletRequest http
     ) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .cacheControl(CacheControl.noStore())
-                .body(shares.createFile(file, expirationMinutes, password, http.getRemoteAddr()));
+        return created(shares.createFile(name, file, expirationMinutes, password, http.getRemoteAddr()));
     }
 
-    @GetMapping("/{token}")
+    @GetMapping("/{slug}")
     public ResponseEntity<ShareViewResponse> view(
-            @PathVariable String token,
-            @RequestHeader(value = "X-Share-Access", required = false) String accessToken
+            @PathVariable String slug,
+            @RequestHeader(value = ACCESS_HEADER, required = false) String accessToken
     ) {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
-                .body(shares.view(token, accessToken));
+                .body(shares.view(slug, accessToken));
     }
 
-    @PostMapping("/{token}/verify")
+    @PostMapping("/{slug}/verify")
     public ResponseEntity<ShareAccessResponse> verify(
-            @PathVariable String token,
-            @RequestBody VerifyPasswordRequest request
+            @PathVariable String slug,
+            @RequestBody(required = false) VerifyPasswordRequest request
     ) {
         String password = request == null ? null : request.password();
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
-                .body(shares.verify(token, password));
+                .body(shares.verify(slug, password));
     }
 
-    @GetMapping("/{token}/download")
-    public ResponseEntity<org.springframework.core.io.Resource> download(
-            @PathVariable String token,
-            @RequestHeader(value = "X-Share-Access", required = false) String accessToken
+    @GetMapping("/{slug}/download")
+    public ResponseEntity<Resource> download(
+            @PathVariable String slug,
+            @RequestHeader(value = ACCESS_HEADER, required = false) String accessToken
     ) {
-        ShareDownload download = shares.download(token, accessToken);
-        MediaType mediaType = mediaType(download.contentType());
+        ShareDownload download = shares.download(slug, accessToken);
         ContentDisposition disposition = ContentDisposition.attachment()
                 .filename(download.filename(), StandardCharsets.UTF_8)
                 .build();
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
-                .contentType(mediaType)
+                .contentType(mediaType(download.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString());
         if (download.size() >= 0) {
             builder.contentLength(download.size());
@@ -100,13 +102,19 @@ public class ShareController {
         return builder.body(download.resource());
     }
 
-    @DeleteMapping("/{token}")
+    @DeleteMapping("/{slug}")
     public ResponseEntity<Void> revoke(
-            @PathVariable String token,
+            @PathVariable String slug,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization
     ) {
-        shares.revoke(token, authorization);
+        shares.revoke(slug, authorization);
         return ResponseEntity.noContent().build();
+    }
+
+    private static ResponseEntity<ShareCreatedResponse> created(ShareCreatedResponse body) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .cacheControl(CacheControl.noStore())
+                .body(body);
     }
 
     private static MediaType mediaType(String value) {

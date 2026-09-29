@@ -13,9 +13,7 @@ import java.util.UUID;
 
 public interface ShareRepository extends JpaRepository<Share, UUID> {
 
-    Optional<Share> findByShareToken(String shareToken);
-
-    boolean existsByShareToken(String shareToken);
+    Optional<Share> findByName(String name);
 
     @Query("select s.id from Share s where s.expiresAt <= :now")
     List<UUID> findExpiredIds(@Param("now") Instant now, Pageable pageable);

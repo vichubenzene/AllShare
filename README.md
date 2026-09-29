@@ -1,259 +1,213 @@
 # All Share
 
-Temporary text and file sharing. A share gets a random link, an optional password, and an expiration time. When it expires or is revoked, the content is gone.
+Temporary text and file sharing under a name you choose.
 
-PostgreSQL stores share metadata and text. Uploaded files go through a storage interface that currently writes to the local disk. Redis is used only for rate limits.
+- Text: `http://localhost:5173/vivi`
+- File `report.pdf` shared as `vivi`: `http://localhost:5173/vivi.pdf`
 
-## Project structure
+Shares expire after 15 minutes to 7 days, can have a password, and can be revoked with a management token shown once at creation.
 
 ```text
-all-share/
-├── docker-compose.yml
-├── .env.example
-├── backend/
-│   └── src/main/java/com/example/share/
-│       ├── config/
-│       ├── controller/
-│       ├── dto/
-│       ├── entity/
-│       ├── repository/
-│       ├── service/
-│       ├── scheduler/
-│       ├── storage/
-│       └── exception/
-└── frontend/
-    └── src/
-        ├── api/
-        ├── components/
-        ├── hooks/
-        ├── layouts/
-        ├── pages/
-        ├── types/
-        └── utils/
+React (Vite, JSX)  ->  Spring Boot  ->  PostgreSQL   shares, text, file metadata
+                                    ->  Redis        rate limits
+                                    ->  MongoDB      request logs (request_logs)
+                                    ->  data/uploads uploaded files
 ```
 
-## Run the backend
+## Requirements
 
-Requires JDK 21, PostgreSQL, and Redis. `JAVA_HOME` must point at the JDK (for example `C:\Program Files\Java\jdk-21.0.12`).
+- Java 21+ (`JAVA_HOME` must point at the JDK, for example `C:\Program Files\Java\jdk-21.0.12`)
+- Node.js 18+
+- PostgreSQL
+- Redis
+- MongoDB
 
-```bash
-cd backend
-mvnw.cmd spring-boot:run
-```
-
-On macOS or Linux, use `./mvnw spring-boot:run`.
-
-The API listens on `http://localhost:8080`.
-
-## Run the frontend
-
-Requires Node.js 18 or newer.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173`. The dev server proxies `/api` to `http://localhost:8080`.
-
-## Docker Compose
-
-Requires Docker.
-
-```bash
-docker compose up --build
-```
-
-- App: `http://localhost:5173`
-- API: `http://localhost:8080`
-- PostgreSQL: `localhost:5432` (database `share`, user `share`, password `share`)
-- Redis: `localhost:6379`
-
-Stop it with `docker compose down`. Add `-v` to delete the database volume and uploaded files.
-
-To run only the databases and develop the apps on the host:
-
-```bash
-docker compose up postgres redis
-```
-
-Change `ACCESS_TOKEN_SECRET` before exposing this anywhere other than your own machine. The Compose default is a development value.
+Maven is not required. `backend\mvnw.cmd` downloads it on first use.
 
 ## Database setup
 
-Flyway creates the `shares` table on startup. You only need an empty database.
+### PostgreSQL
 
-With Docker Compose, the `postgres` service creates it.
-
-Without Docker:
+Create a user and database once, for example in `psql -U postgres`:
 
 ```sql
 CREATE USER share WITH PASSWORD 'share';
 CREATE DATABASE share OWNER share;
 ```
 
-Redis has no schema. Start it locally, or use the Compose service, and point `REDIS_HOST` at it.
+The backend creates the `shares` table on startup (Flyway migration `V1__create_shares.sql`). Share names are unique through the `uk_shares_name` constraint.
 
-Uploaded files are written to `STORAGE_LOCATION` (`backend/data/uploads` when you run from `backend/`).
+### Redis
 
-## API
+Run a Redis server on `localhost:6379`. No setup is needed. On Windows, [Memurai](https://www.memurai.com/) or the [Redis for Windows port](https://github.com/tporadowski/redis/releases) both work. Redis only holds one-minute rate-limit counters.
 
-Errors use this shape:
+### MongoDB
 
-```json
-{ "code": "SHARE_EXPIRED", "message": "This share has expired." }
+Run MongoDB on `localhost:27017`. No setup is needed. The backend writes to the database `temporary_share_logs`, collection `request_logs`, and MongoDB creates both on the first write.
+
+To run without MongoDB, set `REQUEST_LOG_ENABLED=false`. Otherwise the backend refuses to start when MongoDB is unreachable.
+
+## Start the backend
+
+```cmd
+cd backend
+mvnw.cmd spring-boot:run
 ```
 
-| Code | Status | When |
-| --- | --- | --- |
-| `VALIDATION_ERROR` | 400 | Bad input or expiration |
-| `INVALID_FILE` | 400 | Missing or unreadable upload |
-| `FILE_TOO_LARGE` | 413 | Over 50 MB |
-| `SHARE_NOT_FOUND` | 404 | Unknown token |
-| `UNAUTHORIZED` | 401 | Missing or wrong management token |
-| `PASSWORD_REQUIRED` | 401 | Download without access |
-| `INVALID_PASSWORD` | 401 | Wrong password |
-| `SHARE_EXPIRED` | 410 | Past `expiresAt` |
-| `SHARE_REVOKED` | 410 | Creator revoked it |
-| `RATE_LIMITED` | 429 | Too many creates or password attempts |
+On startup the log shows one line per service:
 
-Allowed `expirationMinutes` values: `15`, `60`, `360`, `1440`, `4320`, `10080`.
-
-### Create text
-
-`POST /api/shares`
-
-```json
-{
-  "type": "TEXT",
-  "content": "Hello World",
-  "expirationMinutes": 60,
-  "password": "optional-password"
-}
+```text
+event=startup_check service=postgresql status=ok
+event=startup_check service=redis status=ok
+event=startup_check service=mongodb status=ok database=temporary_share_logs
 ```
 
-```json
-{
-  "token": "a8Kx92LmP4xZ",
-  "shareUrl": "/s/a8Kx92LmP4xZ",
-  "managementToken": "very-long-random-secret",
-  "expiresAt": "2026-09-27T23:00:00Z",
-  "passwordProtected": true
-}
+The API runs on `http://localhost:8080`. Uploaded files are stored in `backend\data\uploads` under generated names, never under the share name or the uploaded filename.
+
+## Start the frontend
+
+```cmd
+cd frontend
+npm install
+npm run dev
 ```
 
-The management token is returned once. It is stored only as a SHA-256 hash.
-
-### Upload a file
-
-`POST /api/shares/file` as `multipart/form-data` with `file`, `expirationMinutes`, and optional `password`. The response matches text creation.
-
-### Read a share
-
-`GET /api/shares/{token}`
-
-Public shares return the text or file metadata. Password-protected shares return `{ "passwordRequired": true }` and do not include the content. After unlock, send the access token in `X-Share-Access`.
-
-### Unlock
-
-`POST /api/shares/{token}/verify`
-
-```json
-{ "password": "optional-password" }
-```
-
-A correct password returns the content and a short-lived access token. Send that token on later reads and downloads. Do not send the password again.
-
-### Download
-
-`GET /api/shares/{token}/download`
-
-The file is streamed. Protected shares need `X-Share-Access`.
-
-### Revoke
-
-`DELETE /api/shares/{token}`
-
-```http
-Authorization: Bearer <management-token>
-```
-
-The public share token cannot revoke a share.
-
-## Example curl commands
-
-```bash
-curl -s -X POST http://localhost:8080/api/shares \
-  -H "Content-Type: application/json" \
-  -d "{\"type\":\"TEXT\",\"content\":\"Hello World\",\"expirationMinutes\":60}"
-
-curl -s -X POST http://localhost:8080/api/shares/file \
-  -F "file=@notes.txt" \
-  -F "expirationMinutes=60" \
-  -F "password=secret"
-
-curl -s http://localhost:8080/api/shares/TOKEN
-
-curl -s -X POST http://localhost:8080/api/shares/TOKEN/verify \
-  -H "Content-Type: application/json" \
-  -d "{\"password\":\"secret\"}"
-
-curl -L -o download.bin \
-  -H "X-Share-Access: ACCESS_TOKEN" \
-  http://localhost:8080/api/shares/TOKEN/download
-
-curl -s -X DELETE http://localhost:8080/api/shares/TOKEN \
-  -H "Authorization: Bearer MANAGEMENT_TOKEN"
-```
-
-## Environment variables
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | `jdbc:postgresql://localhost:5432/share` | JDBC URL |
-| `DATABASE_USERNAME` | `share` | Database user |
-| `DATABASE_PASSWORD` | `share` | Database password |
-| `REDIS_HOST` | `localhost` | Redis host |
-| `REDIS_PORT` | `6379` | Redis port |
-| `STORAGE_LOCATION` | `./data/uploads` | Local file directory |
-| `MAX_FILE_SIZE` | `52428800` | App-level byte limit |
-| `MAX_TEXT_LENGTH` | `1000000` | Maximum text length |
-| `MULTIPART_MAX_FILE_SIZE` | `50MB` | Servlet upload limit |
-| `MULTIPART_MAX_REQUEST_SIZE` | `50MB` | Servlet request limit |
-| `ACCESS_TOKEN_SECRET` | development placeholder | HMAC secret, at least 32 characters |
-| `ACCESS_TOKEN_TTL` | `15m` | Password-unlock token lifetime |
-| `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated browser origins |
-| `RATE_LIMIT_CREATE_PER_MINUTE` | `20` | Creates per client address |
-| `RATE_LIMIT_VERIFY_PER_MINUTE` | `10` | Password attempts per share |
-| `CLEANUP_DELAY_MS` | `60000` | Delay between expiration sweeps |
-| `ALLOWED_EXPIRATIONS` | `15,60,360,1440,4320,10080` | Allowed durations in minutes |
-| `SERVER_PORT` | `8080` | API port |
-| `VITE_API_BASE_URL` | empty | Optional absolute API origin for the frontend |
-
-See `.env.example`.
+Open `http://localhost:5173`. The dev server forwards `/api` to the backend.
 
 ## Tests
 
-Unit tests cover creation, passwords, expiration, revocation, path traversal, file storage, oversized uploads, and rate limits. They do not need Docker.
-
-```bash
+```cmd
 cd backend
-mvnw.cmd test
+mvnw.cmd clean test
 ```
 
-`ShareIntegrationTest` talks to PostgreSQL and Redis through Testcontainers. It runs with the same command when Docker is available, and JUnit skips it when Docker is not.
+```cmd
+cd frontend
+npm run build
+```
 
-## Architecture
+## Configuration
 
-- PostgreSQL is the source of truth. Redis only counts rate-limit windows, and those keys expire after a minute.
-- The public id is a random 12-character token. The database primary key is a UUID and is not put in URLs.
-- Share passwords are BCrypt hashes from Spring Security's `PasswordEncoder`. Management tokens are 256-bit random values stored as SHA-256 hashes.
-- Unlocking a share returns an HMAC access token (`v1`) bound to that share. The password is not sent again, and the API process does not keep a session.
-- `FileStorageService` is the storage boundary. The local implementation streams uploads to a generated hex filename. The original filename is metadata only. Replacing this class is the path to S3 or MinIO.
-- Download responses stream a `Resource`. HTML, SVG, and JavaScript are served as `application/octet-stream` with `Content-Disposition: attachment`.
-- Every read checks revocation and `expiresAt` before returning content. The cleanup job deletes expired rows and files later; it is not what makes an expired share inaccessible.
-- Create limits are per direct client address. Password attempts are per share, counted only after the share is known, so random tokens do not fill Redis. A reverse proxy in front of the API shares one address until forwarded headers are configured.
-- Logs record event names and internal share ids. They do not include passwords, file bytes, share tokens, management tokens, or access tokens.
+Set these as environment variables before starting the backend, for example `set DATABASE_PASSWORD=secret` in `cmd`.
 
-View limits, burn-after-reading, IP allow lists, accounts, and object storage are not implemented. `requireAvailable` in `ShareService` is the place to add view and download limits later.
+| Variable | Default |
+| --- | --- |
+| `DATABASE_URL` | `jdbc:postgresql://localhost:5432/share` |
+| `DATABASE_USERNAME` | `share` |
+| `DATABASE_PASSWORD` | `share` |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | `localhost` / `6379` / empty |
+| `MONGODB_URI` | `mongodb://localhost:27017/temporary_share_logs` |
+| `REQUEST_LOG_ENABLED` | `true` |
+| `STORAGE_LOCATION` | `./data/uploads` |
+| `ACCESS_TOKEN_SECRET` | development value; set 32+ random characters outside your own PC |
+| `RATE_LIMIT_CREATE_PER_MINUTE` | `20` per client IP |
+| `RATE_LIMIT_VERIFY_PER_MINUTE` | `10` password attempts per share |
+| `CORS_ORIGINS` | `http://localhost:5173` |
+| `SERVER_PORT` | `8080` |
+
+## Share names
+
+- Lowercase letters, numbers, `-` and `_`, 1-63 characters, starting with a letter or number. Input is lowercased.
+- A file share adds the uploaded file's extension: `vivi` + `report.pdf` is `/vivi.pdf`. A file without an extension is just `/vivi`.
+- One name belongs to one share. Creating `vivi` while it exists returns `409 SHARE_NAME_TAKEN` and never overwrites. The web page then opens the existing share.
+- A name becomes free again after its share expires.
+- Reserved: `api`, `created`, `assets`, `src`, `node_modules`, `favicon`, `robots`, `index`, `file`, `static`, `public`.
+
+## API
+
+`{slug}` is the public path without the slash: `vivi` or `vivi.pdf`.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/shares` | Create a text share |
+| `POST` | `/api/shares/file` | Create a file share (multipart: `name`, `file`, `expirationMinutes`, `password`) |
+| `GET` | `/api/shares/{slug}` | Read a share. Protected shares return `{"passwordRequired": true, ...}` without content |
+| `POST` | `/api/shares/{slug}/verify` | Check a password. Returns content and a 15-minute access token |
+| `GET` | `/api/shares/{slug}/download` | Download the file. Protected files need the `X-Share-Access` header |
+| `DELETE` | `/api/shares/{slug}` | Revoke. Needs `Authorization: Bearer <management-token>` |
+
+`expirationMinutes` is one of `15`, `60`, `360`, `1440`, `4320`, `10080`.
+
+Errors look like `{"code": "SHARE_EXPIRED", "message": "This share has expired."}`:
+
+| Code | Status |
+| --- | --- |
+| `VALIDATION_ERROR` | 400 |
+| `INVALID_FILE` | 400 |
+| `UNAUTHORIZED`, `INVALID_PASSWORD`, `PASSWORD_REQUIRED` | 401 |
+| `SHARE_NOT_FOUND` | 404 |
+| `SHARE_NAME_TAKEN` | 409 (includes `shareUrl` of the existing share) |
+| `SHARE_EXPIRED`, `SHARE_REVOKED` | 410 |
+| `FILE_TOO_LARGE` | 413 (limit 50 MB) |
+| `RATE_LIMITED` | 429 |
+| `INTERNAL_ERROR` | 500 |
+
+### Examples (`cmd`)
+
+```cmd
+curl -X POST http://localhost:8080/api/shares -H "Content-Type: application/json" -d "{\"name\":\"vivi\",\"content\":\"Hello World\",\"expirationMinutes\":60}"
+
+curl -X POST http://localhost:8080/api/shares/file -F "name=report" -F "file=@report.pdf" -F "expirationMinutes=60" -F "password=secret"
+
+curl http://localhost:8080/api/shares/vivi
+
+curl -X POST http://localhost:8080/api/shares/report.pdf/verify -H "Content-Type: application/json" -d "{\"password\":\"secret\"}"
+
+curl -o report.pdf -H "X-Share-Access: ACCESS_TOKEN" http://localhost:8080/api/shares/report.pdf/download
+
+curl -X DELETE http://localhost:8080/api/shares/vivi -H "Authorization: Bearer MANAGEMENT_TOKEN"
+```
+
+Create response:
+
+```json
+{
+  "name": "vivi",
+  "type": "TEXT",
+  "shareUrl": "/vivi",
+  "managementToken": "ps3KQOzh8KcrikUNmKyE8U7xsXxozUCwWO-pHWgqJko",
+  "expiresAt": "2026-09-28T18:04:37.410Z",
+  "passwordProtected": false
+}
+```
+
+## Request logs
+
+A servlet filter (`RequestLogFilter`) writes one document per API request to MongoDB on a background thread:
+
+```json
+{
+  "timestamp": "2026-09-28T17:03:13.673Z",
+  "method": "GET",
+  "path": "/api/shares/vivi.pdf/download",
+  "status": 200,
+  "ip": "127.0.0.1",
+  "userAgent": "Mozilla/5.0 ...",
+  "shareName": "vivi",
+  "action": "DOWNLOAD",
+  "responseTimeMs": 9
+}
+```
+
+Actions: `CREATE_TEXT`, `CREATE_FILE`, `VIEW`, `DOWNLOAD`, `PASSWORD_OK`, `PASSWORD_FAILED`, `PASSWORD_REQUIRED`, `REVOKE`, `REVOKED_ACCESS`, `EXPIRED_ACCESS`, `NOT_FOUND`, `NAME_TAKEN`, `RATE_LIMITED`, `UNAUTHORIZED`, `ERROR`, and `<action>_REJECTED` for other validation failures. Failed requests also carry `errorCode`.
+
+Logs never contain passwords, password hashes, management or access tokens, share content, file bytes, `Authorization` headers, or cookies.
+
+Browser page loads such as `/vivi` are served by the frontend. The backend logs the API calls those pages make, such as `GET /api/shares/vivi`.
+
+Useful `mongosh` queries:
+
+```js
+use temporary_share_logs
+db.request_logs.find().sort({ timestamp: -1 }).limit(20)
+db.request_logs.find({ shareName: "vivi" })
+db.request_logs.aggregate([{ $group: { _id: "$action", count: { $sum: 1 } } }])
+```
+
+## How it works
+
+- PostgreSQL is the source of truth. Expiration and revocation are checked on every request, so an expired share returns `410` even before the cleanup job (every minute) deletes it and its file.
+- Passwords are BCrypt hashes. After a correct password the backend returns a short-lived HMAC access token bound to that share, so the password is not sent again.
+- Management tokens are 256-bit random values stored only as SHA-256 hashes. Knowing `/vivi` is not enough to revoke it.
+- The uploaded file's type is detected from its bytes (Apache Tika), not from the browser. Downloads are always attachments, and HTML, SVG, and JavaScript are served as `application/octet-stream`.
+- The Vite dev server forwards the client IP (`X-Forwarded-For`), which the backend trusts only from loopback and private addresses.

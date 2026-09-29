@@ -9,6 +9,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
+        // Lets the backend log and rate-limit the real client address instead of the dev server.
+        xfwd: true,
       },
     },
   },
